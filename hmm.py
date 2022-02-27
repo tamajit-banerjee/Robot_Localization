@@ -2,6 +2,8 @@ from gettext import translation
 from locale import currency
 import numpy as np
 import os
+import  cv2
+import copy
 
 def argmax(iterable):
     return max(enumerate(iterable), key=lambda x: x[1])[0]
@@ -28,17 +30,29 @@ class RobotModel():
         self.T = 0
 
     def visualise_grid(self, file_path):
-        with open(file_path, "w")  as f:
-            for  y in range(self.rows):
-                for x in range(self.cols):
-                    if self.pos[0] == x and self.pos[1] == y:
-                        f.write("|@ ")
-                        continue
-                    if self.grid[y][x] == 1:
-                        f.write("|# ")
-                    else:
-                        f.write("|  ")
-                f.write("|\n")
+        # with open(file_path, "w")  as f:
+        #     for  y in range(self.rows):
+        #         for x in range(self.cols):
+        #             if self.pos[0] == x and self.pos[1] == y:
+        #                 f.write("|@ ")
+        #                 continue
+        #             if self.grid[y][x] == 1:
+        #                 f.write("|# ")
+        #             else:
+        #                 f.write("|  ")
+        #         f.write("|\n")
+        grid_len = 100
+        grid = 255*np.ones((grid_len*self.rows, grid_len*self.cols, 3))
+        for y in range(self.rows):
+            for x in range(self.cols):
+                if self.pos[0] == x and self.pos[1] == y:
+                    center = (x*grid_len + grid_len//2, y * grid_len+ grid_len//2)
+                    cv2.circle(grid, center, grid_len//3, color=(0,255,0), thickness=10)
+                    continue
+                if self.grid[y][x] == 1:
+                    grid[y*grid_len:(y+1)*grid_len, x*grid_len:(x+1)*grid_len, 1] = 0
+                    grid[y*grid_len:(y+1)*grid_len, x*grid_len:(x+1)*grid_len, 2] = 0
+        cv2.imwrite(file_path, grid)
 
 
     def add_wall(self, x, y):
@@ -123,7 +137,7 @@ class estimator():
         self.transition_probability = [[0.0 for i in range(self.dim)] for j in range(self.dim)]
         for i in range  (self.dim):
             x = i % self.rows
-            y = i / self.rows
+            y = i // self.rows
             if grid[y][x] == 0:
                 moves = [(1, 0), (0, 1), (-1, 0), (0, -1)]
                 allowed_moves = []
@@ -143,7 +157,7 @@ class estimator():
 
         for i in range (self.dim):
             x = i % self.rows
-            y = i / self.rows
+            y = i // self.rows
             if grid[y][x] == 0:
                 for j in range(16):
                     self.observation_probablity[j][i] = 1.0
@@ -165,13 +179,13 @@ class estimator():
         self.observations = [self.init_observation]
         current_estimate = self.initial_distribution
 
-        for i in self.dim:
+        for i in range(self.dim):
             x = i % self.rows
-            y = i / self.rows
+            y = i // self.rows
             current_estimate[i] *= self.observation_probablity[self.init_observation][i]
         
         self.estimates = [current_estimate]
-        self.viterbi_values = [self.current_estimate]
+        self.viterbi_values = [current_estimate]
         self.viterbi_best_prev_states = [[None for i in range(self.dim)]]
         self.viterbi_sequence = [argmax(self.viterbi_values[-1])]
     
@@ -200,7 +214,7 @@ class estimator():
                 if max_tr_prob == None or tr_prob > max_tr_prob:
                     max_tr_prob = tr_prob
                     prev_st_selected = prev_state
-            new_viterbi_values[cur_state] = max_tr_prob * self.observation_probability[self.observations[-1]][cur_state]
+            new_viterbi_values[cur_state] = max_tr_prob * self.observation_probablity[self.observations[-1]][cur_state]
             new_viterbi_best_prev_state[cur_state] = prev_st_selected
         self.viterbi_values.append(new_viterbi_values)
         self.viterbi_best_prev_states.append(new_viterbi_best_prev_state)
@@ -218,11 +232,11 @@ class estimator():
     def update_current_estimate(self):
         current_values = [0.0 for i in range(self.dim)]
         current_value_sum = 0.0
-        for cur_state in self.dim:
+        for cur_state in range(self.dim):
             tr_prob =  0.0
-            for prev_state in self.dim:
+            for prev_state in range(self.dim):
                 tr_prob += self.estimates[-1][prev_state] * self.transition_probability[cur_state][prev_state]
-            current_values[cur_state] = tr_prob * self.observation_probability[self.observations[-1]][cur_state]
+            current_values[cur_state] = tr_prob * self.observation_probablity[self.observations[-1]][cur_state]
             current_value_sum += current_values[cur_state]
 
         assert(current_value_sum != 0.0)
@@ -233,12 +247,15 @@ class estimator():
         self.estimates.append(current_values)
         
 
-os.makedirs("grids", exist_ok=True)
+os.makedirs("grids_img", exist_ok=True)
 
 
 model = RobotModel(7, 7, n_walls=4, R_max=2)
+estimate = estimator(7,7,2,copy.deepcopy(model.grid),model.make_observation())
 for i in range(100):
-    model.visualise_grid("grids/{}.txt".format(i))
+    model.visualise_grid("grids_img/{}.png".format(i))
     model.make_random_move()
     print(model.pos)
-    print(model.make_observation())
+    observation = model.make_observation()
+    print( observation )
+    estimate.update(observation)
