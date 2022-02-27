@@ -1,6 +1,5 @@
-from gettext import translation
-from locale import currency
 import numpy as np
+np.random.seed(0)
 import os
 import  cv2
 import copy
@@ -133,7 +132,7 @@ class estimator():
                 if ( grid[i][j] == 0 ):
                     self.initial_distribution[i*self.rows+j] = 1/count_valid_cells
 
-        print("Initial distribution :: ",self.initial_distribution)
+        # print("Initial distribution :: ",self.initial_distribution)
 
         ## calculating probability P(Xt+1|Xt) = Sigma P(Xt+1|Ut,Xt) P(Ut|Xt)
         # self.transition_probability = np.zeros((self.dim,self.dim))
@@ -154,7 +153,7 @@ class estimator():
                     x_new = x + m[0]
                     self.transition_probability[y_new * self.rows + x_new][i] = 1/moves_possible 
         
-        print("Transition_probability :: ",self.transition_probability) 
+        # print("Transition_probability :: ",self.transition_probability) 
 
         ## calculating probability P(Ot|Xt)  1 == Close , 0 == Far encoded as 1001 
         # self.observation_probablity = np.zeros((16,self.dim))
@@ -176,18 +175,18 @@ class estimator():
                         prob = (ij-1)/(self.R_max - 1)
                     for j in range(16):
                         if( ( j & (1 << self.order[sensor] ) ) > 0 ) :
-                            if i == 6:
-                                print( j , sensor)
+                            # if i == 6:
+                                # print( j , sensor)
                             self.observation_probablity[j][i] *= (1.0 - prob)
                         else:
-                            if ( j == 0 ):
-                                print(i , prob, ij)
+                            # if ( j == 0 ):
+                            #     print(i , prob, ij)
                             self.observation_probablity[j][i] *= prob
         
-        print("Observation_probability :: ",self.observation_probablity) 
+        # print("Observation_probability :: ",self.observation_probablity) 
         
         self.init_observation = self.encode_observation(initial_observation)
-        print(self.init_observation)
+        # print(self.init_observation)
         self.observations = [self.init_observation]
         current_estimate = self.initial_distribution
         sum = 0.0
@@ -201,7 +200,7 @@ class estimator():
             y = i // self.rows
             current_estimate[i] /= sum
 
-        print("Current_Estimate :: ",current_estimate)
+        # print("Current_Estimate :: ",current_estimate)
         
         self.estimates = [current_estimate]
         self.viterbi_values = [current_estimate]
@@ -272,29 +271,34 @@ class estimator():
         return (argmax(self.estimates[-1])//self.rows , argmax(self.estimates[-1]) % self.rows )
         
 
-os.makedirs("grids_img", exist_ok=True)
-os.makedirs("log_likelihoods", exist_ok=True)
-os.makedirs("viterbi", exist_ok=True)
-
 
 X , Y = 20 , 20
 R_max = 5
-n_walls = 50
+n_walls = 40
+exp_name = "Robot_{}x{}_{}walls_R{}".format(X, Y, n_walls, R_max)
 model = RobotModel(X, Y, R_max,n_walls)
+
+
+
+os.makedirs(os.path.join(exp_name, "grids_img"), exist_ok=True)
+os.makedirs(os.path.join(exp_name, "log_likelihoods"), exist_ok=True)
+os.makedirs(os.path.join(exp_name, "viterbi"), exist_ok=True)
+
+
 
 observation = model.make_observation()
 # observation = {'N': 'Far', 'S': 'Far', 'E': 'Close', 'W': 'Far'}
-print( observation )
+# print( observation )
 estimate = estimator(X, Y, R_max,copy.deepcopy(model.grid),observation)
-model.visualise_grid("grids_img/{}.png".format(-1))
+model.visualise_grid(os.path.join(exp_name, "grids_img/{}.png".format(-1)))
 for i in range(100):
-    model.visualise_grid("grids_img/{}.png".format(i))
+    model.visualise_grid(os.path.join(exp_name, "grids_img/{}.png".format(-1)))
     model.make_random_move()
-    print(model.pos)
+    # print(model.pos)
     observation = model.make_observation()
-    print( observation )
+    # print( observation )
     estimate.update(observation)
-    print(estimate.estimates[-1])
+    # print(estimate.estimates[-1])
     grid_len = 100
     grid = np.zeros((grid_len*model.rows, grid_len*model.cols, 3))
     for y in range(model.rows):
@@ -307,7 +311,7 @@ for i in range(100):
                 center = (x*grid_len + grid_len//2, y * grid_len+ grid_len//2)
                 cv2.circle(grid, center, grid_len//3, color=(0,255,0), thickness=10)
 
-    cv2.imwrite("log_likelihoods/{}.png".format(i), grid)
+    cv2.imwrite(os.path.join(exp_name, "log_likelihoods/{}.png".format(i)), grid)
 
 
     grid_len = 100
@@ -330,7 +334,7 @@ for i in range(100):
                 cv2.circle(grid, center, grid_len//3, color=(0,255,0), thickness=10)
 
 
-    cv2.imwrite("viterbi/{}.png".format(i), grid)
+    cv2.imwrite(os.path.join(exp_name, "viterbi/{}.png".format(i)), grid)
 
 
     # print(estimate.get_current_estimate())
