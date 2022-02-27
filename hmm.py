@@ -50,7 +50,7 @@ class RobotModel():
                     center = (x*grid_len + grid_len//2, y * grid_len+ grid_len//2)
                     cv2.circle(grid, center, grid_len//3, color=(0,255,0), thickness=10)
                     continue
-                if self.grid[y][x] == 1:
+                if self.grid[x][y] == 1:
                     grid[y*grid_len:(y+1)*grid_len, x*grid_len:(x+1)*grid_len, 1] = 0
                     grid[y*grid_len:(y+1)*grid_len, x*grid_len:(x+1)*grid_len, 2] = 0
         cv2.imwrite(file_path, grid)
@@ -247,6 +247,7 @@ class estimator():
             self.viterbi_sequence.append(last_ver)
             last_ver = self.viterbi_best_prev_states[cur_time][last_ver]
             cur_time -= 1
+        self.viterbi_sequence = self.viterbi_sequence[::-1]
 
     def update_current_estimate(self):
         current_values = [0.0 for i in range(self.dim)]
@@ -272,10 +273,13 @@ class estimator():
         
 
 os.makedirs("grids_img", exist_ok=True)
+os.makedirs("log_likelihoods", exist_ok=True)
+os.makedirs("viterbi", exist_ok=True)
 
-X , Y = 7 , 7
-R_max = 2
-n_walls = 0
+
+X , Y = 20 , 20
+R_max = 5
+n_walls = 50
 model = RobotModel(X, Y, R_max,n_walls)
 
 observation = model.make_observation()
@@ -291,4 +295,42 @@ for i in range(100):
     print( observation )
     estimate.update(observation)
     print(estimate.estimates[-1])
+    grid_len = 100
+    grid = np.zeros((grid_len*model.rows, grid_len*model.cols, 3))
+    for y in range(model.rows):
+        for x in range(model.cols):
+            if model.grid[x][y] == 1:
+                grid[y*grid_len:(y+1)*grid_len, x*grid_len:(x+1)*grid_len, 0] = 255
+            else:
+                grid[y*grid_len:(y+1)*grid_len, x*grid_len:(x+1)*grid_len, 2] = 255*estimate.estimates[-1][x*model.rows + y]
+            if model.pos[0] == y and model.pos[1] == x:
+                center = (x*grid_len + grid_len//2, y * grid_len+ grid_len//2)
+                cv2.circle(grid, center, grid_len//3, color=(0,255,0), thickness=10)
+
+    cv2.imwrite("log_likelihoods/{}.png".format(i), grid)
+
+
+    grid_len = 100
+    grid = np.zeros((grid_len*model.rows, grid_len*model.cols, 3))
+    for y in range(model.rows):
+        for x in range(model.cols):
+            if model.grid[x][y] == 1:
+                grid[y*grid_len:(y+1)*grid_len, x*grid_len:(x+1)*grid_len, 0] = 255
+            
+    k =  10
+    k = min(k, len(estimate.viterbi_sequence))
+    for v_iter in range(k):
+        pos = estimate.viterbi_sequence[len(estimate.viterbi_sequence) - k + v_iter]
+        y, x = pos%model.rows,  pos//model.rows
+        grid[y*grid_len:(y+1)*grid_len, x*grid_len:(x+1)*grid_len, 2] = 255*(v_iter/k)
+    for y in range(model.rows):
+        for x in range(model.cols):
+            if model.pos[0] == y and model.pos[1] == x:
+                center = (x*grid_len + grid_len//2, y * grid_len+ grid_len//2)
+                cv2.circle(grid, center, grid_len//3, color=(0,255,0), thickness=10)
+
+
+    cv2.imwrite("viterbi/{}.png".format(i), grid)
+
+
     # print(estimate.get_current_estimate())
