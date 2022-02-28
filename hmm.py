@@ -26,6 +26,7 @@ class RobotModel():
             init_pos = np.random.randint(1, X-1), np.random.randint(1, Y-1)
         # init_pos = 2,2
         self.pos = init_pos
+        self.pos_sequence = [init_pos]
         self.R_max = R_max
         self.T = 0
 
@@ -68,6 +69,7 @@ class RobotModel():
                 allowed_moves.append(i)
         move = moves[np.random.choice(allowed_moves)]
         self.pos = (self.pos[0] + move[0], self.pos[1] + move[1])
+        self.pos_sequence.append(copy.deepcopy(self.pos))
 
     def make_observation(self):
         x, y = self.pos
@@ -95,7 +97,23 @@ class RobotModel():
                 prob = 1 - (i-1)/(self.R_max - 1)
                 obs[sensor] = np.random.choice(["Close", "Far"], p=[prob, 1-prob])
         return obs
+    
+    def state_distance( self, state ):
+        (x,y) = state
+        return abs(x - self.pos[0]) + abs(y - self.pos[1])
+    
+    def sequence_distance(self,sequence):
 
+        assert(len(sequence) == len(self.pos_sequence))
+
+        sum = 0
+
+        for i in range(len(sequence)):
+            (x_estimate,y_estimate) = sequence[i]
+            (x_true,y_true) = self.pos_sequence[i]
+            sum += abs(x_true - x_estimate ) + abs(y_true - y_estimate)
+
+        return sum
 
 
 class estimator():
@@ -120,7 +138,6 @@ class estimator():
         }
 
         ## using initial distribution as uniform distribution
-        # self.initial_distribution = np.zeros((self.dim))
         self.initial_distribution = [0.0 for i in range(self.dim)]
         count_valid_cells = 0
         for i in range(self.rows):
@@ -132,10 +149,7 @@ class estimator():
                 if ( grid[i][j] == 0 ):
                     self.initial_distribution[i*self.rows+j] = 1/count_valid_cells
 
-        # print("Initial distribution :: ",self.initial_distribution)
-
         ## calculating probability P(Xt+1|Xt) = Sigma P(Xt+1|Ut,Xt) P(Ut|Xt)
-        # self.transition_probability = np.zeros((self.dim,self.dim))
         self.transition_probability = [[0.0 for i in range(self.dim)] for j in range(self.dim)]
         for i in range  (self.dim):
             x = i % self.rows
@@ -153,10 +167,7 @@ class estimator():
                     x_new = x + m[0]
                     self.transition_probability[y_new * self.rows + x_new][i] = 1/moves_possible 
         
-        # print("Transition_probability :: ",self.transition_probability) 
-
-        ## calculating probability P(Ot|Xt)  1 == Close , 0 == Far encoded as 1001 
-        # self.observation_probablity = np.zeros((16,self.dim))
+        ## calculating probability P(Ot|Xt)  1 == Close , 0 == Far encoded as 1001
         self.observation_probablity = [[0.0 for i in range(self.dim)] for j in range(16)]
 
         for i in range (self.dim):
@@ -183,10 +194,9 @@ class estimator():
                             #     print(i , prob, ij)
                             self.observation_probablity[j][i] *= prob
         
-        # print("Observation_probability :: ",self.observation_probablity) 
-        
         self.init_observation = self.encode_observation(initial_observation)
-        # print(self.init_observation)
+
+        ## estimating current position
         self.observations = [self.init_observation]
         current_estimate = self.initial_distribution
         sum = 0.0
@@ -200,7 +210,6 @@ class estimator():
             y = i // self.rows
             current_estimate[i] /= sum
 
-        # print("Current_Estimate :: ",current_estimate)
         
         self.estimates = [current_estimate]
         self.viterbi_values = [current_estimate]
@@ -213,7 +222,6 @@ class estimator():
             if observe[sensor] == "Close" :
                 observation_encoded += (1<<(self.order[sensor]))
         return observation_encoded
-            
 
     def update(self,current_observation):
         encoded_observation = self.encode_observation(current_observation)
@@ -258,8 +266,6 @@ class estimator():
             current_values[cur_state] = tr_prob * self.observation_probablity[self.observations[-1]][cur_state]
             current_value_sum += current_values[cur_state]
 
-        # print(current_value_sum)
-
         assert(current_value_sum != 0.0)
 
         for cur_state in range(self.dim):
@@ -268,73 +274,99 @@ class estimator():
         self.estimates.append(current_values)
 
     def get_current_estimate(self):
-        return (argmax(self.estimates[-1])//self.rows , argmax(self.estimates[-1]) % self.rows )
+        return (argmax(self.estimates[-1])//self.rows , argmax(self.estimates[-1])%self.rows )
         
 
 
-X , Y = 20 , 20
-R_max = 5
-n_walls = 40
-exp_name = "Robot_{}x{}_{}walls_R{}".format(X, Y, n_walls, R_max)
-model = RobotModel(X, Y, R_max,n_walls)
+NO_OF_EPISODES = 50
+NO_OF_STEPS = 25
+
+filter_difference_array = []
+Viterbi_Sequence_difference_array = []
 
 
+for no_of_episodes in range(NO_OF_EPISODES):
+    print(no_of_episodes)
+    X , Y = 20 , 20
+    R_max = 10
+    n_walls = 40
+    exp_name = "Robot_{}x{}_{}walls_R{}".format(X, Y, n_walls, R_max)
+    model = RobotModel(X, Y, R_max,n_walls)
 
-os.makedirs(os.path.join(exp_name, "grids_img"), exist_ok=True)
-os.makedirs(os.path.join(exp_name, "log_likelihoods"), exist_ok=True)
-os.makedirs(os.path.join(exp_name, "viterbi"), exist_ok=True)
+
+    os.makedirs(os.path.join(exp_name, "grids_img"), exist_ok=True)
+    os.makedirs(os.path.join(exp_name, "log_likelihoods"), exist_ok=True)
+    os.makedirs(os.path.join(exp_name, "viterbi"), exist_ok=True)
 
 
-
-observation = model.make_observation()
-# observation = {'N': 'Far', 'S': 'Far', 'E': 'Close', 'W': 'Far'}
-# print( observation )
-estimate = estimator(X, Y, R_max,copy.deepcopy(model.grid),observation)
-model.visualise_grid(os.path.join(exp_name, "grids_img/{}.png".format(-1)))
-for i in range(100):
-    model.visualise_grid(os.path.join(exp_name, "grids_img/{}.png".format(-1)))
-    model.make_random_move()
-    # print(model.pos)
     observation = model.make_observation()
-    # print( observation )
-    estimate.update(observation)
-    # print(estimate.estimates[-1])
-    grid_len = 100
-    grid = np.zeros((grid_len*model.rows, grid_len*model.cols, 3))
-    for y in range(model.rows):
-        for x in range(model.cols):
-            if model.grid[x][y] == 1:
-                grid[y*grid_len:(y+1)*grid_len, x*grid_len:(x+1)*grid_len, 0] = 255
-            else:
-                grid[y*grid_len:(y+1)*grid_len, x*grid_len:(x+1)*grid_len, 2] = 255*estimate.estimates[-1][x*model.rows + y]
-            if model.pos[0] == y and model.pos[1] == x:
-                center = (x*grid_len + grid_len//2, y * grid_len+ grid_len//2)
-                cv2.circle(grid, center, grid_len//3, color=(0,255,0), thickness=10)
-
-    cv2.imwrite(os.path.join(exp_name, "log_likelihoods/{}.png".format(i)), grid)
+    # observation = {'N': 'Far', 'S': 'Far', 'E': 'Close', 'W': 'Far'}
+    estimate = estimator(X, Y, R_max,copy.deepcopy(model.grid),observation)
+    model.visualise_grid(os.path.join(exp_name, "grids_img/{}.png".format(-1)))
+    filter_difference = 0
 
 
-    grid_len = 100
-    grid = np.zeros((grid_len*model.rows, grid_len*model.cols, 3))
-    for y in range(model.rows):
-        for x in range(model.cols):
-            if model.grid[x][y] == 1:
-                grid[y*grid_len:(y+1)*grid_len, x*grid_len:(x+1)*grid_len, 0] = 255
-            
-    k =  10
-    k = min(k, len(estimate.viterbi_sequence))
-    for v_iter in range(k):
-        pos = estimate.viterbi_sequence[len(estimate.viterbi_sequence) - k + v_iter]
-        y, x = pos%model.rows,  pos//model.rows
-        grid[y*grid_len:(y+1)*grid_len, x*grid_len:(x+1)*grid_len, 2] = 255*(v_iter/k)
-    for y in range(model.rows):
-        for x in range(model.cols):
-            if model.pos[0] == y and model.pos[1] == x:
-                center = (x*grid_len + grid_len//2, y * grid_len+ grid_len//2)
-                cv2.circle(grid, center, grid_len//3, color=(0,255,0), thickness=10)
+    for i in range(NO_OF_STEPS):
+        model.visualise_grid(os.path.join(exp_name, "grids_img/{}.png".format(-1)))
+        model.make_random_move()
+        observation = model.make_observation()
+        estimate.update(observation)
+        (y,x) = estimate.get_current_estimate()
+        filter_difference += model.state_distance((x,y))
+        grid_len = 100
+        grid = np.zeros((grid_len*model.rows, grid_len*model.cols, 3))
+        for y in range(model.rows):
+            for x in range(model.cols):
+                if model.grid[x][y] == 1:
+                    grid[y*grid_len:(y+1)*grid_len, x*grid_len:(x+1)*grid_len, 0] = 255
+                else:
+                    grid[y*grid_len:(y+1)*grid_len, x*grid_len:(x+1)*grid_len, 2] = 255*estimate.estimates[-1][x*model.rows + y]
+                if model.pos[0] == y and model.pos[1] == x:
+                    center = (x*grid_len + grid_len//2, y * grid_len+ grid_len//2)
+                    cv2.circle(grid, center, grid_len//3, color=(0,255,0), thickness=10)
+
+        cv2.imwrite(os.path.join(exp_name, "log_likelihoods/{}.png".format(i)), grid)
 
 
-    cv2.imwrite(os.path.join(exp_name, "viterbi/{}.png".format(i)), grid)
+        grid_len = 100
+        grid = np.zeros((grid_len*model.rows, grid_len*model.cols, 3))
+        for y in range(model.rows):
+            for x in range(model.cols):
+                if model.grid[x][y] == 1:
+                    grid[y*grid_len:(y+1)*grid_len, x*grid_len:(x+1)*grid_len, 0] = 255
+                
+        k =  10
+        k = min(k, len(estimate.viterbi_sequence))
+        for v_iter in range(k):
+            pos = estimate.viterbi_sequence[len(estimate.viterbi_sequence) - k + v_iter]
+            y, x = pos%model.rows,  pos//model.rows
+            grid[y*grid_len:(y+1)*grid_len, x*grid_len:(x+1)*grid_len, 2] = 255*(v_iter/k)
+        for y in range(model.rows):
+            for x in range(model.cols):
+                if model.pos[0] == y and model.pos[1] == x:
+                    center = (x*grid_len + grid_len//2, y * grid_len+ grid_len//2)
+                    cv2.circle(grid, center, grid_len//3, color=(0,255,0), thickness=10)
 
 
-    # print(estimate.get_current_estimate())
+        cv2.imwrite(os.path.join(exp_name, "viterbi/{}.png".format(i)), grid)
+
+    sequence = estimate.viterbi_sequence
+    sequence = [ (cell%estimate.rows , cell//estimate.rows) for cell in sequence ]
+    viterbi_difference = model.sequence_distance(sequence)
+
+    # print("Viterbi Sequence difference :: ", viterbi_difference)
+    # print("filter_difference :: ", filter_difference)
+    filter_difference_array.append(filter_difference)
+    Viterbi_Sequence_difference_array.append(viterbi_difference)
+
+filter_difference_array = np.array(filter_difference_array)
+
+print("Filter mean :: " , np.mean(filter_difference_array) )
+print("Filter STD :: " , np.std(filter_difference_array) )
+
+
+Viterbi_Sequence_difference_array = np.array(Viterbi_Sequence_difference_array)
+
+print("Viterbi mean :: " , np.mean(Viterbi_Sequence_difference_array) )
+print("Viterbi STD :: " , np.std(Viterbi_Sequence_difference_array) )
+
