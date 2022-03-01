@@ -18,9 +18,18 @@ class RobotModel():
         for i in range(Y):
             self.add_wall(0, i)
             self.add_wall(-1, i)
-        for i in range(n_walls):
-            x, y = np.random.randint(1, X-1), np.random.randint(1, Y-1)
-            self.add_wall(x, y)
+        while True:
+            grid = copy.deepcopy(self.grid)
+            for i in range(n_walls):
+                x, y = np.random.randint(1, X-1), np.random.randint(1, Y-1)
+                grid[y][x] = 1
+            f = False
+            for x in range(1,X-1):
+                for y in range(1,Y-1):
+                    f |= (grid[x-1][y] & grid[x+1][y] & grid[x][y-1] & grid[x][y+1])
+            if f == False:
+                self.grid = copy.deepcopy(grid)
+                break
         init_pos = np.random.randint(1, X-1), np.random.randint(1, Y-1)
         while self.grid[init_pos[1]][init_pos[0]] == 1:
             init_pos = np.random.randint(1, X-1), np.random.randint(1, Y-1)
@@ -278,7 +287,7 @@ class estimator():
         
 
 
-NO_OF_EPISODES = 50
+NO_OF_EPISODES = 1
 NO_OF_STEPS = 25
 
 filter_difference_array = []
@@ -287,9 +296,9 @@ Viterbi_Sequence_difference_array = []
 
 for no_of_episodes in range(NO_OF_EPISODES):
     print(no_of_episodes)
-    X , Y = 20 , 20
-    R_max = 10
-    n_walls = 40
+    X , Y = 10 , 10
+    R_max = 5
+    n_walls = 20
     exp_name = "Robot_{}x{}_{}walls_R{}".format(X, Y, n_walls, R_max)
     model = RobotModel(X, Y, R_max,n_walls)
 
@@ -307,7 +316,7 @@ for no_of_episodes in range(NO_OF_EPISODES):
 
 
     for i in range(NO_OF_STEPS):
-        model.visualise_grid(os.path.join(exp_name, "grids_img/{}.png".format(-1)))
+        model.visualise_grid(os.path.join(exp_name, "grids_img/{}.png".format(i)))
         model.make_random_move()
         observation = model.make_observation()
         estimate.update(observation)
