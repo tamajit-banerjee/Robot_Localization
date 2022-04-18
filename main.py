@@ -363,8 +363,6 @@ for no_of_episodes in range(NO_OF_EPISODES):
     sequence = [ (cell%estimate.rows , cell//estimate.rows) for cell in sequence ]
     viterbi_difference = model.sequence_distance(sequence)
 
-    # print("Viterbi Sequence difference :: ", viterbi_difference)
-    # print("filter_difference :: ", filter_difference)
     filter_difference_array.append(filter_difference)
     Viterbi_Sequence_difference_array.append(viterbi_difference)
 
